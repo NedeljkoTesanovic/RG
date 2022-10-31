@@ -1,0 +1,4 @@
+C:\Users\nedel\Desktop\RGRepo\SejderMegic\x64\Debug\glew32.dll
+C:\Users\nedel\Desktop\RGRepo\SejderMegic\x64\Debug\RG_E2_V2.exe
+C:\Users\nedel\Desktop\RGRepo\RG_E2_V2\x64\Debug\glew32.dll
+C:\Users\nedel\Desktop\RGRepo\RG_E2_V2\x64\Debug\RG_E2_V2.exe
