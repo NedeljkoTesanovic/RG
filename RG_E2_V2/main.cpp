@@ -1,254 +1,210 @@
-//Author: Nedeljko Tesanovic
-//Module: main.cpp
-//Renders a colourful rectangle that can be moved around using WSAD
+//Autor: Nedeljko Tesanovic
+//Namjena: Program koji crta trougao sa razlicito obojenim tjemenima
 
-#include <GL/glew.h> // Eases use of OpenGL functions
-#include <GLFW/glfw3.h> // Creates context/window
+#include <GL/glew.h> //Biblioteka za olaksanu upotrebu OpenGL funkcija i ekstenzija
+#include <GLFW/glfw3.h> //Biblioteka za lakse stvaranje OpenGL konteksta (prozora) - include uvijek NAKON glew.h
 
 #include <iostream>
+
+//Za citanje iz fajla
 #include <fstream>
+#include <sstream>
 
-float x = 0, y = 0, z = 0; //Global variables used for simplicity's sake (to be avoided)
-
-void framebuffer_size_callback(GLFWwindow* context, int width, int height); //Adjusts the render upon window resize
-void processInput(GLFWwindow* context); //Process mouse/keyboard input 
-
-int compileShader(const char* type, const char* source); // Compiles shader of type 'type' (VERTEX/FRAGMENT) from file located in 'source'
-int createShader(const char* vsSource, const char* fsSource); // Creates a unified shader program by compiling vertex and fragment shaders from source filepaths
-
-std::string readFile(const char* source); //Returns the contents of file located in 'source'
+std::string readFile(const char* filePath); //Vraca sadrzaj fajla sa putajne kao string
+int compileShader(const char* filePath, GLuint shaderType); //Vraca kompajlirani sejder objekat odredjenog tipa, ciji je izvorni kod u fajlu na putanji
+int createProgram(const char* vsSource, const char* fsSource); //Vraca objedinjeni sedjer program, prima putanje do izvornih fajlova verteks i fragment sejdera
 
 int main()
 {
-	//Window info
-	int wWidth = 1280;
-	int wHeight = 720;
-	const char* wTitle = "[Generic title]";
-
-	//GLFW Init
+	//Inicijalizacija GLFW biblioteke
 	if (!glfwInit())
 	{
-		std::cout << "GLFW Init failed!\n";
+		std::cout << "GLFW Init failure!\n";
 		return 1;
 	}
 
-	//OpenGL version
+	//Dimenzije i naslov prozora
+	unsigned int wWidth = 600;
+	unsigned int wHeight = 600;
+	const char* wTitle = "[Generic title]";
+
+	//Biranje OpenGL verzije (3.3 Programabilni pajplajn)
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE); //Core = Programabilni pajplajn; Compatibility = Programabilni + legacy funkcije iz fiksnog pajplajna
 
-	//Context (window) creation
-	GLFWwindow* context = NULL;
-	context = glfwCreateWindow(wWidth, wHeight, wTitle, NULL, NULL);
-	if (context == NULL)
+	//Stvaranje prozora
+	// Parametri (Sirina, Visina, Naslov, Monitor za fullscreen, Prozor (kontekst) sa kojim se dijele resursi)
+	GLFWwindow* window = glfwCreateWindow(wWidth, wHeight, wTitle, NULL, NULL); //Za fullscreen 4. parametar promjeniti na glfwGetPrimaryMonitor()
+	if (window == NULL)
 	{
-		std::cout << "GLFW Context not created!\n";
+		std::cout << "Context creation failure!\n";
 		glfwTerminate();
 		return 1;
 	}
-	glfwMakeContextCurrent(context);
-	glfwSetFramebufferSizeCallback(context, framebuffer_size_callback);
+	else {
+		//Postavi novostvoreni prozor kao aktivni OpenGL kontekst
+		glfwMakeContextCurrent(window);
+	}
 
-	//GLEW Init
+	//Inicijalizacija GLEW biblioteke
 	if (glewInit() != GLEW_OK)
 	{
-		std::cout << "GLEW Init failed!\n";
+		std::cout << "GLEW Init failure!\n";
 		glfwTerminate();
 		return 1;
 	}
 
-	//Vertices
-	float vertices[] = {
-		// X     Y	   Z      R    G    B    A
-	  	0.25, -0.25, 0.0,    0.4, 0.4, 0.0, 1.0,
-		-0.25, -0.25, 0.0,   0.4, 0.0, 0.4, 1.0,
-		0.25, 0.25, 0.0,    0.0, 0.4, 0.4, 1.0,
-		-0.25, 0.25, 0.0,   0.0, 0.0, 0.0, 1.0
-	};
-	int stride = 7 * sizeof(float); // 3 coordinates + 4 colours = 7 floats
-	unsigned int indices[] = {
-		0, 1, 2,
-		1, 2, 3
+	//Definisanje tjemena
+	float vertices[] =
+	{
+		//Pozicija	|		Boja
+		// X	Y	|	R	G	B	A
+		-0.5, 0.5,	  1.0, 0.0, 0.0, 1.0,
+		0.5, 0.5,	  1.0, 1.0, 0.0, 1.0,
+		0.0, -0.5,	  0.0, 0.0, 1.0, 1.0,
 	};
 
-	//Shader
-	int shader = createShader("basic.vert", "basic.frag");
+	// Korak (u bajtovima) za kretanje po tjemenima
+	unsigned int stride = (2 + 4) * sizeof(float);
 
-	//Buffer bindings
-	unsigned int VAO;
+	//Stvaranje bafera
+	unsigned int VAO; //Vertex Array Object (VBOs + Attribute Pointers)
+	unsigned int VBO; //Vertex Buffer Object
+
+	//Generisi jedan VAO
 	glGenVertexArrays(1, &VAO);
+	//Izaberi ga kao aktivan
 	glBindVertexArray(VAO);
 
-	unsigned int VBO;
+	//Generisi jedan bafer
 	glGenBuffers(1, &VBO);
+	//Izaberi novogenerisani bafer kao aktivni
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
+	//Postavi podatke bafera
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-	unsigned int EBO;
-	glGenBuffers(1, &EBO);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0); // Coordinates
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, stride, (void*)(3 * sizeof(float))); // Colour
+	//Opisi atribute, tj. kako da interpretiramo podatke tjemena
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride, (void*)0); // Pozicija
+	glEnableVertexAttribArray(0); //Ukljuci taj nacin interpretacije
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, stride, (void*)(2 * sizeof(float))); //Boja
 	glEnableVertexAttribArray(1);
 
-	//Unbind (for safety reasons)
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	//Unbind-ovanje stvari koje smo upravo generisali
 	glBindVertexArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-	//Render loop
-	while (!glfwWindowShouldClose(context))
+	//Pravimo unified Shader objekat (program)
+	int shaderProgram = createProgram("basic.vert", "basic.frag");
+
+	//Render petlja
+	while (!glfwWindowShouldClose(window))
 	{
-		//Event Polling
-		glfwPollEvents();
+		//Postavljanje boje pozadine (RGBA)
+		//Parametri (float [0-1]. Veca vrijednost = svijetlija boja) : Crvena, Zelena, Plava, Alfa (0 = Potpuno providno, 1 = Potpuno neprovidno)
+		glClearColor(0.5, 0.5, 0.5, 1.0);
 
-		//Input processing
-		processInput(context);
-
-		//Screen clearing
-		glClearColor(1, 1, 1, 1);
+		//Ciscenje ekrana
 		glClear(GL_COLOR_BUFFER_BIT);
 
-		//Draw calls
-			//Offset calculation
-		int offsetLocation = glGetUniformLocation(shader, "offset");
-		glUniform3f(offsetLocation, x, y, z);
-			//Drawing proper
-		glUseProgram(shader);
+		//Biranje aktivnog sejdera
+		glUseProgram(shaderProgram);
+		//Biranje stvari koje cemo da crtamo
 		glBindVertexArray(VAO);
-		glDrawElements(GL_TRIANGLES, sizeof(indices) / 3, GL_UNSIGNED_INT, 0);
-		glBindVertexArray(0);
+		//Crtanje
+		glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices) / stride);
+		glBindVertexArray(0); //Oslobadjamo bafer nakon crtanja
 
+		//Zamijena prikazanog i pozadinskog bafera
+		glfwSwapBuffers(window);
 
-		//Buffer swapping
-		glfwSwapBuffers(context);
+		//Hvatanje dogadjaja za prozor (mijenjanje velicine, itd)
+		glfwPollEvents();
 	}
 
-	//Clean-up
-	glDeleteVertexArrays(1, &VAO);
+	//Pospremanje
 	glDeleteBuffers(1, &VBO);
-	glDeleteProgram(shader);
-	glfwTerminate();
+	glDeleteVertexArrays(1, &VAO);
 
+	glfwTerminate();
 	return 0;
 }
 
-void framebuffer_size_callback(GLFWwindow* context, int width, int height)
+std::string readFile(const char* filePath)
 {
-	glViewport(0, 0, width, height);
-}
-void processInput(GLFWwindow* context)
-{
-	if (glfwGetKey(context, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+	//Funkcija za kopiranje sadrzaja fajla u string
+	//Nije najefikasniji nacin, ali radi i razumljivo je :)
+	std::ifstream file(filePath);
+	if (!file.is_open())
 	{
-		glfwSetWindowShouldClose(context, true);
+		std::cout << "Couldn't open file from " << filePath << " !\n";
+		return "";
 	}
-	if (glfwGetKey(context, GLFW_KEY_D) == GLFW_PRESS)
-	{
-		x += 0.001;
-		if (x > 1)
-			x = 1;
-	}
-	if (glfwGetKey(context, GLFW_KEY_A) == GLFW_PRESS)
-	{
-		x -= 0.001;
-		if (x < -1)
-			x = - 1;
-	}
-	if (glfwGetKey(context, GLFW_KEY_W) == GLFW_PRESS)
-	{
-		y += 0.001;
-		if (y > 1)
-			y = 1;
-	}
-	if (glfwGetKey(context, GLFW_KEY_S) == GLFW_PRESS)
-	{
-		y -= 0.001;
-		if (y < -1)
-			y = -1;
-	}
+	std::stringstream ss;
+	ss << file.rdbuf();
+	return ss.str();
 }
 
-std::string readFile(const char* source)
-{
-	std::string content = "";
-	std::ifstream file(source);
-	if (file.is_open())
-	{
-		while (!file.eof())
-			content += file.get();
-		file.close();
-		return content;
-	}
-	std::cout << "Couldn't open file!\n";
-	return "";
-}
-int compileShader(const char* shaderType, const char* source)
-{
-	int shader;
-	if(shaderType == "VERTEX")
-		shader = glCreateShader(GL_VERTEX_SHADER);
-	else if (shaderType == "FRAGMENT")
-		shader = glCreateShader(GL_FRAGMENT_SHADER);
-	else
-	{
-		std::cout << "Shader type unknown!\n";
-		return -1;
-	}
+int compileShader(const char* filePath, GLuint shaderType)
+{//Vraca kompajlirani sejder objekat odredjenog tipa, ciji je izvorni kod u fajlu na putanji
 
-	std::string temp = readFile(source);
-	const char* code = temp.c_str();
+	std::string temp = readFile(filePath);
+	const char* sourceCode = temp.c_str();
 
-	glShaderSource(shader, 1, &code, NULL);
+	//Pravljejne praznog sejder objekta
+	unsigned int shader = glCreateShader(shaderType);
+	//Postavljanje izvornog koda sejdera
+	//Parametri: ciljni sejder objekat, broj promjenljivih koje sadrze kodove, sami kodovi, duzine kodova unutar promjenljivih koje ih sadrze
+	//4. parametar se moze postaviti za NULL ako stringovi imaju null terminator
+	glShaderSource(shader, 1, &sourceCode, NULL);
+	//Kompajliranje sejdera
 	glCompileShader(shader);
+	//Ispitivanje uspjesnosti kompilacije
 	int success;
-	const int infoLength = 512;
-	char infoLog[infoLength];
+	char infoLog[512];
+	//glGetShaderiv Vraca status flag-bitova unutar sejdera
+	//Parametri: sejder, ciljni bit, odrediste za status tog bita
 	glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
 	if (!success)
 	{
-		glGetShaderInfoLog(shader, infoLength, NULL, infoLog);
-		std::cout << shaderType << " SHADER Compilation failed!\nInfo: " << infoLog << std::endl;
+		//glGetShaderInfoLog vraca poruku o gresci
+		//Parametri: sejder, maksimalna duzina poruke, duzina poruke (NULL ako ima null terminator), odrediste poruke
+		glGetShaderInfoLog(shader, 512, NULL, infoLog);
+		std::cout << shaderType << " SHADER COMPILATION FAILURE!\n InfoLog: " << infoLog << std::endl;
+		return -1;
 	}
 	return shader;
 }
-int createShader(const char* vsSource, const char* fsSource) 
+int createProgram(const char* vsSource, const char* fsSource)
 {
-	int unifiedShader;
-	unifiedShader = glCreateProgram();
-	
-	int vertexShader = compileShader("VERTEX", vsSource);
-	if (vertexShader == -1)
-	{
-		std::cout << "Vertex shader creation failed!";
-		return -1;
-	}
-	glAttachShader(unifiedShader, vertexShader);
+	//Vraca objedinjeni sedjer program, prima putanje do izvornih fajlova verteks i fragment sejdera
 
-	int fragmentShader = compileShader("FRAGMENT", fsSource);
-	if (fragmentShader == -1)
-	{
-		std::cout << "Fragment shader creation failed!";
-		return -1;
-	}
-	glAttachShader(unifiedShader, fragmentShader);
+	int program = glCreateProgram();
+	int vertexShader = compileShader(vsSource, GL_VERTEX_SHADER);
+	int fragmentShader = compileShader(fsSource, GL_FRAGMENT_SHADER);
 
-	glLinkProgram(unifiedShader);
+	//Kompajlirane sejdere zakacimo na program
+	glAttachShader(program, vertexShader);
+	glAttachShader(program, fragmentShader);
+
+	//Povezemo izlaze zakacenih sejdera
+	glLinkProgram(program);
+
+	//Provjerimo uspjesnost na slican nacin kao kompajliranje sejdera
 	int success;
-	const int infoLength = 512;
-	char infoLog[infoLength];
-	glGetProgramiv(unifiedShader, GL_LINK_STATUS, &success);
+	char infoLog[512];
+	glGetProgramiv(program, GL_LINK_STATUS, &success);
 	if (!success)
 	{
-		glGetProgramInfoLog(unifiedShader, infoLength, NULL, infoLog);
-		std::cout << "Unified shader program linking failed!\nInfo: " << infoLog;
-		return -1;
+		glGetProgramInfoLog(program, 512, NULL, infoLog);
+		std::cout << "Program linking failure!\n InfoLog: " << infoLog << std::endl;
 	}
 
+	//Posto je sadrzaj sejdera sada u samom programu, rijesimo se prethodno stvorenih sejder objekata
+	glDetachShader(program, vertexShader);
+	glDetachShader(program, fragmentShader);
 	glDeleteShader(vertexShader);
 	glDeleteShader(fragmentShader);
 
-	return unifiedShader;	
+	return program;
 }
